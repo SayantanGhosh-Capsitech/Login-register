@@ -37,51 +37,102 @@ namespace Login_register.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var (success, message, token, user) = await _userService.LoginAsync(loginDto);
+            var (success, message, token, refreshToken, user) = await _userService.LoginAsync(loginDto);
             if (!success)
             {
-                return Unauthorized(new { message = message });
+                return Unauthorized(new { message });
             }
 
-            // Set JWT in cookie
+            // Set access token cookie
             Response.Cookies.Append("jwt", token, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true, // true in production
+                Secure = true,
                 SameSite = SameSiteMode.Strict,
                 Expires = DateTime.UtcNow.AddHours(1)
             });
 
+            // Set refresh token cookie
+            Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = DateTime.UtcNow.AddDays(7)
+            });
+
             return Ok(new
-            {    
-                message = message,
-                token = token,
+            {
+                message,
+                token,
+                refreshToken,
                 user = new { user!.Id, user.Name, user.Email }
             });
         }
 
+
         [HttpPost("logout")]
-        public IActionResult Logout()
+        public async Task<IActionResult> Logout()
         {
+            var refreshToken = Request.Cookies["refreshToken"];
+            if (!string.IsNullOrEmpty(refreshToken))
+            {
+                var user = await _userService.FindByRefreshTokenAsync(refreshToken);
+                if (user != null)
+                {
+                    user.RefreshToken = null;
+                    user.RefreshTokenExpiryTime = null;
+                    await _userService.UpdateUserAsync(user);
+                }
+            }
+
             Response.Cookies.Delete("jwt");
+            Response.Cookies.Delete("refreshToken");
+
             return Ok(new { message = "Logged out successfully." });
         }
+
 
         // GET: api/auth/me
         [HttpGet("me")]
         [Authorize]
         public IActionResult Me()
         {
-            var id = User.FindFirstValue("id");
+            var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var email = User.FindFirstValue(ClaimTypes.Email);
             var name = User.FindFirstValue(ClaimTypes.Name);
 
             return Ok(new { id, name, email });
         }
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh()
+        {
+            var refreshToken = Request.Cookies["refreshToken"];
+            if (string.IsNullOrEmpty(refreshToken))
+                return Unauthorized(new { message = "Missing refresh token." });
+
+            var result = await _userService.RefreshTokenAsync(refreshToken);
+            if (!result.Success)
+                return Unauthorized(new { message = result.Message });
+
+            Response.Cookies.Append("jwt", result.Token, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = DateTime.UtcNow.AddHours(1)
+            });
+
+            Response.Cookies.Append("refreshToken", result.NewRefreshToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = DateTime.UtcNow.AddDays(7)
+            });
+
+            return Ok(new { message = "Token refreshed successfully." });
+        }
+
     }
 }

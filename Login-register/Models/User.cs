@@ -23,5 +23,8 @@ namespace Login_register.Models
 
         [BsonElement("updatedAt")]
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
+
+        public string? RefreshToken { get; set; }
+        public DateTime? RefreshTokenExpiryTime { get; set; }
     }
 }

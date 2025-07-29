@@ -3,8 +3,11 @@ using Login_register.Models;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
+using System;
+using System.Buffers.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Login_register.Services
@@ -41,21 +44,30 @@ namespace Login_register.Services
             return (true, "User registered successfully.");
         }
 
-        public async Task<(bool Success, string Message, string Token, User? user)> LoginAsync(LoginDto dto)
+        public async Task<(bool Success, string Message, string Token, string RefreshToken, User? user)> LoginAsync(LoginDto dto)
         {
             var user = await _users.Find(u => u.Email == dto.Email).FirstOrDefaultAsync();
-            if (user == null)
-            {
-                return (false, "User not found.", string.Empty, null);
-            }
-            if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.Password))
-            {
-                return (false, "Invalid password.", string.Empty, null);
-            }
-            // Generate JWT token here (not implemented in this example)
-            var token = CreateJwtToken(user); // Placeholder for actual JWT generation logic
-            return (true, "Login successful.", token, user);
+            
+                if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.Password))
+                {
+                    return (false, "Invalid credentials.", string.Empty, string.Empty, null);
+                }
+           
+            var token = CreateJwtToken(user);
+            var refreshToken = GenerateRefreshToken();
+
+            user.RefreshToken = refreshToken; // Assigns the newly generated refresh token to the user's refreshToken property
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7); // valid for 7 days
+
+            await _users.ReplaceOneAsync(u => u.Id == user.Id, user); // It replaces the entire user record where the user's ID matches. This saves the new refresh token and its expiry time to the database.
+
+            return (true, "Login successful.", token, refreshToken, user);
         }
+        private string GenerateRefreshToken()
+        {
+            return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)); // Generates 64 random bytes using a cryptographically secure RNG. Converts those random bytes into a Base64 - encoded string, which is URL - safe and easy to store / transmit.
+        }
+
         private string CreateJwtToken(User user)
         {
             var claims = new[] // Claims are key-value pairs that represent user information and are used to create the JWT token.These values can be extracted from the token later for authorization or personalization.
@@ -80,6 +92,36 @@ namespace Login_register.Services
             // Serializes the JWT token to a string format that can be sent to the client.
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+        public async Task<(bool Success, string Message, string Token, string NewRefreshToken)> RefreshTokenAsync(string refreshToken)
+        {
+            var user = await _users.Find(u => u.RefreshToken == refreshToken).FirstOrDefaultAsync();
+
+            if (user == null || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+            {
+                return (false, "Invalid or expired refresh token.", string.Empty, string.Empty);
+            }
+
+            var newAccessToken = CreateJwtToken(user);
+            var newRefreshToken = GenerateRefreshToken();
+
+            user.RefreshToken = newRefreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+
+            await _users.ReplaceOneAsync(u => u.Id == user.Id, user); 
+
+            return (true, "New token generated.", newAccessToken, newRefreshToken);
+        }
+        public async Task<User?> FindByRefreshTokenAsync(string refreshToken)
+        {
+            return await _users.Find(u => u.RefreshToken == refreshToken).FirstOrDefaultAsync();
+        }
+
+        public async Task UpdateUserAsync(User user)
+        {
+            await _users.ReplaceOneAsync(u => u.Id == user.Id, user);
+        }
+
+
 
     }
 }
