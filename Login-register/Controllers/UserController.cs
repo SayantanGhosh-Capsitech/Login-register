@@ -104,7 +104,7 @@ namespace Login_register.Controllers
 
             return Ok(new { id, name, email });
         }
-        [HttpPost("refresh")]
+        [HttpPost("refresh")]  
         public async Task<IActionResult> Refresh()
         {
             var refreshToken = Request.Cookies["refreshToken"];
@@ -116,7 +116,7 @@ namespace Login_register.Controllers
                 return Unauthorized(new { message = result.Message });
 
             Response.Cookies.Append("jwt", result.Token, new CookieOptions
-            {
+            { 
                 HttpOnly = true,
                 Secure = true,
                 SameSite = SameSiteMode.Strict,
@@ -131,7 +131,7 @@ namespace Login_register.Controllers
                 Expires = DateTime.UtcNow.AddDays(7)
             });
 
-            return Ok(new { message = "Token refreshed successfully." });
+            return Ok(new { token = result.Token, message = "Token refreshed successfully." });
         }
 
     }

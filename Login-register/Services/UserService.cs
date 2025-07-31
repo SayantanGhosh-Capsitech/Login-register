@@ -57,7 +57,7 @@ namespace Login_register.Services
             var refreshToken = GenerateRefreshToken();
 
             user.RefreshToken = refreshToken; // Assigns the newly generated refresh token to the user's refreshToken property
-            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7); // valid for 7 days
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(1); // valid for 7 days
 
             await _users.ReplaceOneAsync(u => u.Id == user.Id, user); // It replaces the entire user record where the user's ID matches. This saves the new refresh token and its expiry time to the database.
 
@@ -86,7 +86,7 @@ namespace Login_register.Services
                 issuer: null,
                 audience: null,
                 claims: claims,
-                expires: DateTime.UtcNow.AddHours(1),
+                expires: DateTime.UtcNow.AddMinutes(2),
                 signingCredentials: creds);
 
             // Serializes the JWT token to a string format that can be sent to the client.
@@ -120,8 +120,5 @@ namespace Login_register.Services
         {
             await _users.ReplaceOneAsync(u => u.Id == user.Id, user);
         }
-
-
-
     }
 }
